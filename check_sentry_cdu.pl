@@ -1,9 +1,9 @@
-#!/usr/bin/perl -w
-#/usr/bin/env perl -w - doesn't work on centos, why???
+#!/usr/bin/env perl  
 
 #############################################################################
 #CHECK_SENTRY_CDU	
 #See --help for more information...
+#
 #
 # ***************************************************************************
 # *   Copyright (C) 2012 by Jeremy Falling except where noted.              *
@@ -23,20 +23,18 @@
 # *   Free Software Foundation, Inc.,                                       *
 # *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
 # ***************************************************************************
-# CHANGE LOG:
+#TO DO:
+# - check to see if both power strips are available, if user has both (check secondary_tower?)
+#
+#CHANGE LOG:
 #
 # 3-14-12: Jeremy Falling: First version.
+# 3-16-12: Jeremy Falling: Fixed variables so that I can use strict. Also using /usr/bin/env perl
+#
 #
 #############################################################################
-#Planned thresholds, but this will be defined in nagios and passed to this script
-#if amps over 15, warn
-#if amps over 18, crit
-#if fuse error, crit
-#if temp 95, warn
-#if temp 105, crit
-
-#use strict;
-use lib utils.pm;
+use strict;
+use utils;
 use Getopt::Long;
 use vars qw($opt_help $opt_warn $opt_crit $opt_type $opt_timeout $opt_host $opt_com $PROGNAME);
 use utils qw(%ERRORS &print_revision &support &usage);
@@ -44,17 +42,17 @@ use utils qw(%ERRORS &print_revision &support &usage);
 #############################################################################
 #define/init a few things
 # Define where our SNMP utilities are.
-$snmp_walk="/usr/bin/snmpwalk";
-$snmp_get="/usr/bin/snmpget";
-$PROGNAME = "check_sentry_cdu";
+my $snmp_walk="/usr/bin/snmpwalk";
+my $snmp_get="/usr/bin/snmpget";
+my $PROGNAME = "check_sentry_cdu";
 
 #define the oids
-$cduloadoid=".1.3.6.1.4.1.1718.3.2.2.1.7"; #add tower and feed integer. then divide by 100. load means amps.
-$cdutempoid=".1.3.6.1.4.1.1718.3.2.5.1.6.1"; #add sensor integer. then divide by 10
-$cduhumidoid=".1.3.6.1.4.1.1718.3.2.5.1.10.1"; #add sensor integer.
-$cdutempscaleoid=".1.3.6.1.4.1.1718.3.2.5.1.13.1.1"; #I assume that both sensors will have the same scale so I will just look at one of them. 0 is c 1 is f.
+my $cduloadoid=".1.3.6.1.4.1.1718.3.2.2.1.7"; #add tower and feed integer. then divide by 100. load means amps.
+my $cdutempoid=".1.3.6.1.4.1.1718.3.2.5.1.6.1"; #add sensor integer. then divide by 10
+my $cduhumidoid=".1.3.6.1.4.1.1718.3.2.5.1.10.1"; #add sensor integer.
+my $cdutempscaleoid=".1.3.6.1.4.1.1718.3.2.5.1.13.1.1"; #I assume that both sensors will have the same scale so I will just look at one of them. 0 is c 1 is f.
 
-$exit_code = ""; #declare $exit_code as an empty string so this script will default to an unknown error code if $exit_code was not re-defined
+my $exit_code = ""; #declare $exit_code as an empty string so this script will default to an unknown error code if $exit_code was not re-defined
 sub print_help (); #define this so we dont get a prototype error
 #############################################################################
 
@@ -85,12 +83,12 @@ my $host = $1 if ($opt_host =~ /([-.A-Za-z0-9]+)/);
 
 #check warn thresh
 ($opt_warn) || usage("Warning threshold not specified\n");
-$warning_thresh = $opt_warn;
+my $warning_thresh = $opt_warn;
 ($warning_thresh) || usage("Invalid warning threshold: $opt_warn\n");
 
 #check crit thresh
 ($opt_crit) || usage("Critical threshold not specified\n");
-$critical_thresh = $opt_crit;
+my $critical_thresh = $opt_crit;
 ($critical_thresh) || usage("Invalid critical threshold: $opt_crit\n");
 
 #check check type
@@ -99,13 +97,22 @@ $critical_thresh = $opt_crit;
 #check to see what check was requested. 
 
 #if user requested amp check
+my $numOfTowers;
+my $current_val;
+my $num_of_sensors;
+my @sensor_val;
+my $ba_load_val;
+my $count;
+my $temp_scale;
+my $current_status;
 if ($opt_type eq "amp") {
 	# Walk to get the amp values.
+	
 	@sensor_val = `$snmp_walk -v 1 -O vesq -c $opt_com $host $cduloadoid`;
 	chomp(@sensor_val);
 	
 	#check to see if ba is = -1, if so, the second tower is probably not present, so delete ba-bc from the array. 
-	$ba_load_val = $sensor_val[3];
+	 $ba_load_val = $sensor_val[3];
 	if ($ba_load_val == -1) {
 		delete $sensor_val[3];
 		delete $sensor_val[4];
@@ -127,7 +134,7 @@ if ($opt_type eq "amp") {
 		$count ++
 	}
 		
-	
+
 	#check the number of towers, if 3 feeds, then there is only one tower
 	if ($num_of_sensors == 3) {
 		$numOfTowers = 1;
@@ -190,10 +197,10 @@ elsif ($opt_type eq "temp"){
 	#get temp scale
 	$temp_scale = `$snmp_get -v 1 -O vesq -c $opt_com $host $cdutempscaleoid`;
 	if ($temp_scale == 1){
-	$postfix = "F";
+	$temp_scale = "F";
 	}
 	else{
-	$postfix = "C";
+	$temp_scale = "C";
 	}
 	
 	@sensor_val = `$snmp_walk -v 1 -O vesq -c $opt_com $host $cdutempoid`;
@@ -218,7 +225,7 @@ elsif ($opt_type eq "temp"){
 	#check if sensor values are ok
 	check_sensor_values ();
 	
-	print "Sensor1: $sensor_val[0]$postfix ,Sensor1: $sensor_val[1]$postfix";
+	print "Sensor1: $sensor_val[0]$temp_scale ,Sensor1: $sensor_val[1]$temp_scale";
 	exit_sub ();
 }
 
